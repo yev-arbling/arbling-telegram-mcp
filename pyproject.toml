@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arbling-telegram-mcp"
+version = "0.1.0"
+description = "Read-only MCP server that exposes curated Telegram groups to Claude Code and other MCP clients"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+keywords = ["mcp", "claude", "telegram", "second-brain", "knowledge-base"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "telethon>=1.36",
+    "pyyaml>=6.0",
+    "python-dateutil>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "anyio>=4.0",
+    "build>=1.0",
+    "twine>=5.0",
+]
+
+[project.scripts]
+arbling-telegram-mcp = "arbling_telegram_mcp.cli:main"
+
+[project.urls]
+Repository = "https://github.com/yev-arbling/arbling-telegram-mcp"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arbling_telegram_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
