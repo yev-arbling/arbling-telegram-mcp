@@ -93,12 +93,16 @@ def _make_mock_message(
     group_id: int = -1001234567890,
 ) -> MagicMock:
     """Return a MagicMock shaped like a Telethon Message."""
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     msg = MagicMock()
     msg.id = msg_id
     msg.text = text
-    msg.date = datetime(2026, 5, 25, 12, 0, 0, tzinfo=timezone.utc)
+    # Default to a recent timestamp so since-window filters (e.g. "7d") keep the
+    # message. A hardcoded calendar date silently ages out and breaks read/search
+    # tests once wall-clock passes it + the window. Tests that exercise the cutoff
+    # set msg.date explicitly.
+    msg.date = datetime.now(tz=timezone.utc) - timedelta(hours=1)
     msg.media = MagicMock() if has_media else None
     msg.sender = MagicMock()
     msg.sender.username = "testuser"
