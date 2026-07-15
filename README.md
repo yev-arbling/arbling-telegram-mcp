@@ -72,6 +72,11 @@ Add the same block to your Cowork MCP settings (the `mcpServers` section in the 
 | `TELEGRAM_API_HASH` | Yes | — | API hash from https://my.telegram.org |
 | `TELEGRAM_SESSION_PATH` | No | `~/.arbling-telegram-mcp/session` | Path to the Telethon `.session` file (without extension) |
 | `TELEGRAM_CURATED_GROUPS_PATH` | No | `~/.arbling-telegram-mcp/curated-groups.yaml` | Path to your curated groups config |
+| `TELEGRAM_SESSION_STRING` | Hosted only | — | Telethon StringSession (wins over the session file). See "Hosted deployment" |
+| `TELEGRAM_CURATED_GROUPS_B64` | Hosted only | — | Base64-encoded curated-groups YAML (wins over the file path) |
+| `TELEGRAM_MCP_AUTH_TOKEN` | Hosted only | — | Bearer token required by `serve-http`; the server refuses to start without it |
+| `TELEGRAM_MCP_DISABLED` | No | — | Kill switch: any truthy value (`1`/`true`/`yes`/`on`) makes `serve-http` reject all tool calls with 503 |
+| `PORT` | No | `8080` | Listen port for `serve-http` (set by Railway automatically) |
 
 ## Tools
 
@@ -112,6 +117,56 @@ tech_mentors:
 The three categories (`tech_news`, `investor`, `tech_mentors`) are the convention. Empty arrays are allowed. Extra top-level categories are forward-compatible.
 
 To get the numeric IDs: run `arbling-telegram-mcp list-groups` — it outputs a YAML template with all your groups commented out, ready to edit.
+
+## Hosted deployment (Railway)
+
+The server can also run over HTTP for cloud callers (e.g. a daily-brief runner) via the `serve-http` subcommand — a stateless streamable-HTTP MCP endpoint at **`POST /mcp`**, protected by a mandatory bearer token. The repo ships a `Dockerfile` and `railway.json` (healthcheck on `/health`, restart `ON_FAILURE`), so deploying is: create a Railway service from this repo, set the variables below, done.
+
+The read-only tool surface is identical to stdio mode — same 7 tools, no DMs, curated groups only.
+
+### Required variables on Railway
+
+| Variable | Purpose |
+|---|---|
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Same API credentials as local mode |
+| `TELEGRAM_SESSION_STRING` | Your Telegram session as a Telethon StringSession — set it with the export helper below, never by hand in logs/chat |
+| `TELEGRAM_CURATED_GROUPS_B64` | Your `curated-groups.yaml`, base64-encoded (e.g. `base64 -w0 curated-groups.yaml`) |
+| `TELEGRAM_MCP_AUTH_TOKEN` | Bearer token clients must send; generate with `openssl rand -hex 32`. **Fail closed**: the server refuses to start if unset |
+| `TELEGRAM_MCP_DISABLED` | Optional kill switch — set to `1` to instantly reject all tool traffic (503) without deleting the service |
+
+`PORT` is injected by Railway; `RAILWAY_GIT_COMMIT_SHA` is used by the health endpoint if present.
+
+### Exporting your session
+
+Run on the machine where you did `arbling-telegram-mcp auth` (requires the [Railway CLI](https://docs.railway.com/guides/cli), logged in and linked):
+
+```sh
+python scripts/export_session_to_railway.py --service <service-name>
+```
+
+The conversion is fully offline and the session string is never printed — only its length. Treat `TELEGRAM_SESSION_STRING` like a password: it grants read access as your account. If it ever leaks, log out that session from Telegram's active-sessions screen.
+
+### Calling the hosted server
+
+```sh
+curl -X POST https://<your-app>.up.railway.app/mcp \
+  -H "Authorization: Bearer $TELEGRAM_MCP_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Requests without a valid token get `401`; when the kill switch is on, everything except `/health` gets `503`.
+
+### Health endpoint
+
+`GET /health` needs no auth and leaks no account or group data — booleans only:
+
+```json
+{"status": "ok", "sha": "<deploy commit>", "session_configured": true, "groups_configured": true}
+```
+
+`status` is `"disabled"` (HTTP 503) when the kill switch is on. Railway uses this path for deploy health checks.
 
 ## Troubleshooting
 
