@@ -148,6 +148,12 @@ def mock_telethon(fake_session: Path):
             },
         ),
     ):
+        # patch.dict restores os.environ on exit, so popping here is safe.
+        # Hosted-mode vars must not leak into file-session tests.
+        import os
+
+        os.environ.pop("TELEGRAM_SESSION_STRING", None)
+        os.environ.pop("TELEGRAM_CURATED_GROUPS_B64", None)
         # Force the singleton to reconnect with the mock
         client_mod._telegram_client._client = None
         yield mock_instance

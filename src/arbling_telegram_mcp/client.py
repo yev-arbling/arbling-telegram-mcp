@@ -14,6 +14,7 @@ from typing import Optional
 from dateutil import parser as dateutil_parser
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
+from telethon.sessions import StringSession
 from telethon.tl.types import Channel, Chat, User
 
 from .config import ConfigError, filter_by_category, get_all_curated_ids, load_curated_groups
@@ -28,6 +29,16 @@ def get_session_path() -> Path:
     if raw:
         return Path(raw).expanduser().resolve()
     return DEFAULT_SESSION_PATH
+
+
+def get_session_string() -> str:
+    """Return TELEGRAM_SESSION_STRING with whitespace and UTF-8 BOM stripped.
+
+    The value is a credential equivalent to a full login — it must never be
+    logged, echoed, or included in error messages.
+    """
+    raw = os.environ.get("TELEGRAM_SESSION_STRING", "")
+    return raw.replace("\ufeff", "").strip()
 
 
 def get_api_credentials() -> tuple[int, str]:
@@ -172,16 +183,32 @@ class TelegramMCPClient:
     async def _get_client(self) -> TelegramClient:
         if self._client is None or not self._client.is_connected():
             api_id, api_hash = get_api_credentials()
-            session_path = get_session_path()
 
-            session_file = Path(str(session_path) + ".session")
-            if not session_file.exists() and not session_path.exists():
-                raise RuntimeError(
-                    "Session not initialized. "
-                    "Run 'arbling-telegram-mcp auth' first to log in."
-                )
+            session_string = get_session_string()
+            if session_string:
+                # Hosted mode: TELEGRAM_SESSION_STRING takes precedence over
+                # any session file. Never include the value in errors or logs.
+                try:
+                    session = StringSession(session_string)
+                except Exception:
+                    raise RuntimeError(
+                        "TELEGRAM_SESSION_STRING is set but is not a valid "
+                        "Telethon string session (value not shown). Re-export "
+                        "it with scripts/export_session_to_railway.py."
+                    ) from None
+            else:
+                session_path = get_session_path()
+                session_file = Path(str(session_path) + ".session")
+                if not session_file.exists() and not session_path.exists():
+                    raise RuntimeError(
+                        f"Session not initialized: no session file at {session_file} "
+                        "and no TELEGRAM_SESSION_STRING set. Run "
+                        "'arbling-telegram-mcp auth' to create a session file, or "
+                        "set TELEGRAM_SESSION_STRING (hosted mode)."
+                    )
+                session = str(session_path)
 
-            self._client = TelegramClient(str(session_path), api_id, api_hash)
+            self._client = TelegramClient(session, api_id, api_hash)
             await self._client.connect()
 
             if not await self._client.is_user_authorized():

@@ -224,3 +224,108 @@ async def test_get_message_thread_rejects_non_curated(
             await client_mod.get_message_thread(
                 group_id=-9999999, message_id=1
             )
+
+
+# ---------------------------------------------------------------------------
+# Session selection — TELEGRAM_SESSION_STRING vs session file
+# ---------------------------------------------------------------------------
+
+
+def _make_valid_session_string() -> str:
+    """Build a syntactically valid Telethon string session offline."""
+    from telethon.crypto import AuthKey
+    from telethon.sessions import StringSession
+
+    session = StringSession()
+    session.set_dc(2, "149.154.167.40", 443)
+    session.auth_key = AuthKey(data=b"\x01" * 256)
+    return session.save()
+
+
+@pytest.mark.asyncio
+async def test_session_string_env_selects_string_session(mock_telethon):
+    from telethon.sessions import StringSession
+
+    import arbling_telegram_mcp.client as client_mod
+
+    with patch.dict(
+        "os.environ", {"TELEGRAM_SESSION_STRING": _make_valid_session_string()}
+    ):
+        await client_mod._telegram_client._get_client()
+
+    session_arg = client_mod.TelegramClient.call_args[0][0]
+    assert isinstance(session_arg, StringSession)
+
+
+@pytest.mark.asyncio
+async def test_session_string_wins_over_session_file(mock_telethon, fake_session: Path):
+    # mock_telethon already sets TELEGRAM_SESSION_PATH to an existing fake file;
+    # setting the string on top must take precedence.
+    from telethon.sessions import StringSession
+
+    import arbling_telegram_mcp.client as client_mod
+
+    with patch.dict(
+        "os.environ", {"TELEGRAM_SESSION_STRING": _make_valid_session_string()}
+    ):
+        await client_mod._telegram_client._get_client()
+
+    assert isinstance(client_mod.TelegramClient.call_args[0][0], StringSession)
+
+
+@pytest.mark.asyncio
+async def test_session_string_tolerates_bom_and_whitespace(mock_telethon):
+    from telethon.sessions import StringSession
+
+    import arbling_telegram_mcp.client as client_mod
+
+    padded = "\ufeff  " + _make_valid_session_string() + " \n"
+    with patch.dict("os.environ", {"TELEGRAM_SESSION_STRING": padded}):
+        await client_mod._telegram_client._get_client()
+
+    assert isinstance(client_mod.TelegramClient.call_args[0][0], StringSession)
+
+
+@pytest.mark.asyncio
+async def test_env_unset_uses_session_file_path(mock_telethon, fake_session: Path):
+    import arbling_telegram_mcp.client as client_mod
+
+    await client_mod._telegram_client._get_client()
+
+    session_arg = client_mod.TelegramClient.call_args[0][0]
+    assert session_arg == str(fake_session)
+
+
+@pytest.mark.asyncio
+async def test_invalid_session_string_raises_without_echoing_value(mock_telethon):
+    import arbling_telegram_mcp.client as client_mod
+
+    with patch.dict(
+        "os.environ", {"TELEGRAM_SESSION_STRING": "garbage-not-a-session"}
+    ):
+        with pytest.raises(RuntimeError) as excinfo:
+            await client_mod._telegram_client._get_client()
+
+    message = str(excinfo.value)
+    assert "TELEGRAM_SESSION_STRING" in message
+    assert "garbage-not-a-session" not in message
+
+
+@pytest.mark.asyncio
+async def test_missing_file_and_missing_string_gives_distinguishing_error(
+    mock_telethon, tmp_path: Path
+):
+    import os
+
+    import arbling_telegram_mcp.client as client_mod
+
+    with patch.dict(
+        "os.environ", {"TELEGRAM_SESSION_PATH": str(tmp_path / "missing")}
+    ):
+        os.environ.pop("TELEGRAM_SESSION_STRING", None)
+        with pytest.raises(RuntimeError) as excinfo:
+            await client_mod._telegram_client._get_client()
+
+    message = str(excinfo.value)
+    assert "no session file" in message
+    assert "TELEGRAM_SESSION_STRING" in message
