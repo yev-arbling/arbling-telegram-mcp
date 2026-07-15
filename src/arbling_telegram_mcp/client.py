@@ -179,9 +179,20 @@ class TelegramMCPClient:
 
     def __init__(self) -> None:
         self._client: Optional[TelegramClient] = None
+        self._lock = asyncio.Lock()
 
     async def _get_client(self) -> TelegramClient:
-        if self._client is None or not self._client.is_connected():
+        client = self._client
+        if client is not None and client.is_connected():
+            return client
+
+        async with self._lock:
+            # Re-check under the lock: a concurrent caller may have finished
+            # initializing while we were waiting.
+            client = self._client
+            if client is not None and client.is_connected():
+                return client
+
             api_id, api_hash = get_api_credentials()
 
             session_string = get_session_string()
@@ -208,16 +219,19 @@ class TelegramMCPClient:
                     )
                 session = str(session_path)
 
-            self._client = TelegramClient(session, api_id, api_hash)
-            await self._client.connect()
+            # Work on a local variable across the awaits; publish to
+            # self._client only once fully connected and authorized.
+            client = TelegramClient(session, api_id, api_hash)
+            await client.connect()
 
-            if not await self._client.is_user_authorized():
+            if not await client.is_user_authorized():
                 raise RuntimeError(
                     "Session expired or unauthorized. "
                     "Run 'arbling-telegram-mcp auth' to re-authenticate."
                 )
 
-        return self._client
+            self._client = client
+            return client
 
     async def get_status(self) -> dict:
         try:

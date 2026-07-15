@@ -154,7 +154,13 @@ def mock_telethon(fake_session: Path):
 
         os.environ.pop("TELEGRAM_SESSION_STRING", None)
         os.environ.pop("TELEGRAM_CURATED_GROUPS_B64", None)
-        # Force the singleton to reconnect with the mock
+        # Force the singleton to reconnect with the mock. The lock is
+        # recreated too: an asyncio.Lock binds to the first event loop that
+        # acquires it, and pytest-asyncio gives every test a fresh loop.
+        import asyncio
+
         client_mod._telegram_client._client = None
+        client_mod._telegram_client._lock = asyncio.Lock()
         yield mock_instance
         client_mod._telegram_client._client = None
+        client_mod._telegram_client._lock = asyncio.Lock()

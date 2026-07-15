@@ -329,3 +329,35 @@ async def test_missing_file_and_missing_string_gives_distinguishing_error(
     message = str(excinfo.value)
     assert "no session file" in message
     assert "TELEGRAM_SESSION_STRING" in message
+
+
+# ---------------------------------------------------------------------------
+# Lazy init is race-free — concurrent callers share ONE client
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_get_client_constructs_exactly_one_client(mock_telethon):
+    import asyncio
+
+    import arbling_telegram_mcp.client as client_mod
+
+    # Realistic connect semantics: is_connected() only flips to True once
+    # connect() has completed. Without the init lock, every concurrent caller
+    # observes a disconnected client mid-flight and builds its own.
+    connected = False
+
+    async def slow_connect():
+        nonlocal connected
+        await asyncio.sleep(0.05)
+        connected = True
+
+    mock_telethon.connect = AsyncMock(side_effect=slow_connect)
+    mock_telethon.is_connected.side_effect = lambda: connected
+
+    clients = await asyncio.gather(
+        *(client_mod._telegram_client._get_client() for _ in range(10))
+    )
+
+    assert client_mod.TelegramClient.call_count == 1
+    assert all(c is clients[0] for c in clients)
