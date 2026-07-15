@@ -10,11 +10,12 @@ from unittest.mock import patch
 import pytest
 from starlette.testclient import TestClient
 
-from arbling_telegram_mcp.http_server import build_http_app
+from arbling_telegram_mcp.http_server import build_http_app, run_http_server
 
 from tests.conftest import VALID_YAML
 
-TOKEN = "test-token-123"
+# Must satisfy the 32-char minimum enforced at startup.
+TOKEN = "test-token-0123456789abcdef0123456789abcdef"
 MCP_HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Accept": "application/json, text/event-stream",
@@ -76,6 +77,12 @@ def test_missing_auth_token_refuses_to_start():
 def test_whitespace_auth_token_refuses_to_start():
     with patch.dict(os.environ, {"TELEGRAM_MCP_AUTH_TOKEN": "   "}):
         with pytest.raises(RuntimeError, match="TELEGRAM_MCP_AUTH_TOKEN"):
+            build_http_app()
+
+
+def test_short_auth_token_refuses_to_start():
+    with patch.dict(os.environ, {"TELEGRAM_MCP_AUTH_TOKEN": "short-token"}):
+        with pytest.raises(RuntimeError, match="TELEGRAM_MCP_AUTH_TOKEN.*too short"):
             build_http_app()
 
 
@@ -206,12 +213,15 @@ def test_health_groups_not_configured_when_b64_invalid(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_kill_switch_health_returns_503_disabled(tmp_path: Path):
+def test_kill_switch_health_stays_200_with_disabled_status(tmp_path: Path):
+    # /health must keep answering 200 from a live process: a 503 here would
+    # fail Railway's healthcheck on the kill-switch redeploy and leave the
+    # previous, still-enabled process running.
     env = _hosted_env(tmp_path, TELEGRAM_MCP_DISABLED="1")
     with patch.dict(os.environ, env):
         with TestClient(build_http_app()) as client:
             r = client.get("/health")
-    assert r.status_code == 503
+    assert r.status_code == 200
     assert r.json()["status"] == "disabled"
 
 
@@ -229,4 +239,36 @@ def test_kill_switch_falsy_values_keep_service_enabled(tmp_path: Path):
         env = _hosted_env(tmp_path, TELEGRAM_MCP_DISABLED=value)
         with patch.dict(os.environ, env):
             with TestClient(build_http_app()) as client:
-                assert client.get("/health").status_code == 200
+                assert client.get("/health").json()["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Observability — 401s are logged without the presented token
+# ---------------------------------------------------------------------------
+
+
+def test_401_is_logged_without_presented_token(hosted_client: TestClient, caplog):
+    presented = "attacker-supplied-secret-token-value"
+    with caplog.at_level("WARNING", logger="arbling_telegram_mcp.http_server"):
+        r = hosted_client.post(
+            "/mcp",
+            json=INITIALIZE_BODY,
+            headers={"Authorization": f"Bearer {presented}"},
+        )
+
+    assert r.status_code == 401
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("401" in m for m in messages)
+    assert all(presented not in m for m in messages)
+
+
+# ---------------------------------------------------------------------------
+# PORT validation — clean error instead of a traceback
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_port_raises_clean_runtime_error(tmp_path: Path):
+    env = _hosted_env(tmp_path, PORT="not-a-number")
+    with patch.dict(os.environ, env):
+        with pytest.raises(RuntimeError, match="PORT must be a number"):
+            run_http_server()
