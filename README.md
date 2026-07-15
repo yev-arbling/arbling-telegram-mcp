@@ -141,8 +141,10 @@ The read-only tool surface is identical to stdio mode — same 7 tools, no DMs, 
 Run on the machine where you did `arbling-telegram-mcp auth` (requires the [Railway CLI](https://docs.railway.com/guides/cli), logged in and linked):
 
 ```sh
-python scripts/export_session_to_railway.py --service <service-name>
+py -3.12 scripts/export_session_to_railway.py --service <service-name>
 ```
+
+On macOS/Linux use `python3` instead of `py -3.12`.
 
 The conversion is fully offline and the session string is never printed — only its length. Treat `TELEGRAM_SESSION_STRING` like a password: it grants read access as your account. If it ever leaks, log out that session from Telegram's active-sessions screen.
 
@@ -166,7 +168,7 @@ Requests without a valid token get `401`; when the kill switch is on, everything
 {"status": "ok", "sha": "<deploy commit>", "session_configured": true, "groups_configured": true}
 ```
 
-`status` is `"disabled"` (HTTP 503) when the kill switch is on. Railway uses this path for deploy health checks.
+When the kill switch is on, `status` is `"disabled"` but the HTTP status stays **200**: Railway uses this path for deploy health checks, and a 503 would fail the kill-switch redeploy and leave the previous, still-enabled process running. Tool traffic is still rejected with 503 by the auth middleware. If you need a hard stop instead of the soft kill switch, take the service down entirely with `railway down`.
 
 ## Troubleshooting
 
