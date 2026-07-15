@@ -201,6 +201,13 @@ def main() -> None:
         help="Discover all groups and print a curated-groups.yaml template",
     )
     sub.add_parser("status", help="Print Telegram connection/auth status as JSON")
+    sub.add_parser(
+        "serve-http",
+        help=(
+            "Run the MCP server over streamable HTTP with bearer auth "
+            "(hosted mode, e.g. Railway). Requires TELEGRAM_MCP_AUTH_TOKEN."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -210,6 +217,14 @@ def main() -> None:
         asyncio.run(_cmd_list_groups())
     elif args.command == "status":
         asyncio.run(_cmd_status())
+    elif args.command == "serve-http":
+        from .http_server import run_http_server
+
+        try:
+            run_http_server()
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
     else:
         try:
             from .server import mcp
