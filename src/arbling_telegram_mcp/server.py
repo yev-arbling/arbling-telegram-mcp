@@ -16,10 +16,7 @@ from .client import (
 )
 from .config import filter_by_category, load_curated_groups
 
-mcp = FastMCP("arbling-telegram-mcp")
 
-
-@mcp.tool()
 async def telegram_status() -> dict:
     """
     Return connection and authentication status for this Telegram session.
@@ -37,7 +34,6 @@ async def telegram_status() -> dict:
     return await get_telegram_status()
 
 
-@mcp.tool()
 async def list_my_groups() -> list[dict]:
     """
     List every Telegram group and channel the user is a member of.
@@ -55,7 +51,6 @@ async def list_my_groups() -> list[dict]:
     return await _list_my_groups()
 
 
-@mcp.tool()
 async def list_curated_groups(category: Optional[str] = None) -> list[dict]:
     """
     Return groups from the user's curated-groups.yaml config.
@@ -76,7 +71,6 @@ async def list_curated_groups(category: Optional[str] = None) -> list[dict]:
     return filter_by_category(config, category)
 
 
-@mcp.tool()
 async def read_recent_messages(
     category: Optional[str] = None,
     since: str = "24h",
@@ -107,7 +101,6 @@ async def read_recent_messages(
     )
 
 
-@mcp.tool()
 async def search_messages(
     query: str,
     category: Optional[str] = None,
@@ -134,7 +127,6 @@ async def search_messages(
     return await _search_messages(query=query, category=category, since=since, limit=limit)
 
 
-@mcp.tool()
 async def get_message_thread(
     group_id: int,
     message_id: int,
@@ -159,7 +151,6 @@ async def get_message_thread(
     )
 
 
-@mcp.tool()
 async def refresh_session() -> dict:
     """
     Re-validate the Telegram session by making a live API call.
@@ -175,3 +166,34 @@ async def refresh_session() -> dict:
     Call this when telegram_status reports connected=False or tools fail with auth errors.
     """
     return await _refresh_session()
+
+
+# The full read-only tool surface. Hosted HTTP mode exposes exactly this list —
+# never add write tools here (see CONTRIBUTING.md hard constraints).
+ALL_TOOLS = (
+    telegram_status,
+    list_my_groups,
+    list_curated_groups,
+    read_recent_messages,
+    search_messages,
+    get_message_thread,
+    refresh_session,
+)
+
+
+def create_mcp(**settings) -> FastMCP:
+    """Build a FastMCP instance with all 7 read-only tools registered.
+
+    Extra keyword arguments are forwarded to FastMCP settings (e.g.
+    stateless_http=True, json_response=True for the hosted HTTP transport).
+    A fresh instance per call matters for HTTP mode: a FastMCP session
+    manager can only be started once.
+    """
+    server = FastMCP("arbling-telegram-mcp", **settings)
+    for tool_fn in ALL_TOOLS:
+        server.tool()(tool_fn)
+    return server
+
+
+# Module-level instance used by the default stdio transport (`arbling-telegram-mcp`).
+mcp = create_mcp()

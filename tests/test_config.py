@@ -1,8 +1,10 @@
-"""Tests for config.py: YAML loading, validation, and filtering."""
+"""Tests for config.py: YAML loading, validation, filtering, and B64 env source."""
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -14,6 +16,7 @@ from arbling_telegram_mcp.config import (
     get_all_curated_ids,
     load_curated_groups,
 )
+from tests.conftest import VALID_YAML
 
 
 def test_load_valid_yaml(fake_config: Path):
@@ -122,3 +125,78 @@ def test_get_all_curated_ids(fake_config: Path):
     assert -1009876543210 in ids
     total = sum(len(v) for v in config.values())
     assert len(ids) == total
+
+
+# ---------------------------------------------------------------------------
+# TELEGRAM_CURATED_GROUPS_B64 — hosted-mode env source
+# ---------------------------------------------------------------------------
+
+
+def _b64(text: str) -> str:
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def test_b64_env_loads_groups():
+    with patch.dict("os.environ", {"TELEGRAM_CURATED_GROUPS_B64": _b64(VALID_YAML)}):
+        config = load_curated_groups()
+
+    assert len(config["tech_news"]) == 2
+    assert config["tech_news"][0]["id"] == -1001234567890
+    assert config["investor"][0]["category"] == "investor"
+
+
+def test_b64_env_wins_over_file_path(fake_config: Path):
+    other_yaml = "tech_news:\n  - id: -42\n    name: FromEnv\n"
+    with patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_CURATED_GROUPS_PATH": str(fake_config),
+            "TELEGRAM_CURATED_GROUPS_B64": _b64(other_yaml),
+        },
+    ):
+        config = load_curated_groups()
+
+    assert len(config["tech_news"]) == 1
+    assert config["tech_news"][0]["id"] == -42
+
+
+def test_b64_tolerates_line_wrapped_base64():
+    encoded = _b64(VALID_YAML)
+    wrapped = "\n".join(encoded[i : i + 20] for i in range(0, len(encoded), 20))
+    with patch.dict("os.environ", {"TELEGRAM_CURATED_GROUPS_B64": wrapped}):
+        config = load_curated_groups()
+
+    assert len(config["tech_news"]) == 2
+
+
+def test_b64_invalid_base64_raises_config_error():
+    with patch.dict("os.environ", {"TELEGRAM_CURATED_GROUPS_B64": "!!!not-base64!!!"}):
+        with pytest.raises(ConfigError, match="base64"):
+            load_curated_groups()
+
+
+def test_b64_invalid_yaml_raises_without_echoing_content():
+    bad_yaml = "{ this is: [not valid yaml"
+    with patch.dict("os.environ", {"TELEGRAM_CURATED_GROUPS_B64": _b64(bad_yaml)}):
+        with pytest.raises(ConfigError, match="Malformed YAML") as excinfo:
+            load_curated_groups()
+
+    # The decoded content must not appear in the error message.
+    assert "not valid yaml" not in str(excinfo.value)
+
+
+def test_b64_validation_uses_existing_loader_rules():
+    missing_id = "tech_news:\n  - name: MissingId\n"
+    with patch.dict("os.environ", {"TELEGRAM_CURATED_GROUPS_B64": _b64(missing_id)}):
+        with pytest.raises(ConfigError, match="missing required 'id'"):
+            load_curated_groups()
+
+
+def test_b64_explicit_path_argument_bypasses_env(fake_config: Path):
+    with patch.dict(
+        "os.environ", {"TELEGRAM_CURATED_GROUPS_B64": _b64("tech_news: []")}
+    ):
+        config = load_curated_groups(fake_config)
+
+    # Explicit path callers (internal/tests) are unaffected by the env var.
+    assert len(config["tech_news"]) == 2
