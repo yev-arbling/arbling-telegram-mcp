@@ -30,5 +30,13 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Run pip-audit
+      - name: Run pip-audit (fresh resolve of pyproject ranges)
         run: pip-audit --strict --desc
+
+      # The step above audits what a fresh resolve of pyproject.toml's open
+      # ranges would install — NOT what actually ships. The Docker image
+      # installs the pinned closure from requirements-lock.txt, so audit that
+      # artifact explicitly; a stale-but-in-range pin would otherwise pass CI
+      # while the deployed image carries known CVEs.
+      - name: Run pip-audit (deployed lockfile)
+        run: pip-audit --strict --desc --no-deps -r requirements-lock.txt

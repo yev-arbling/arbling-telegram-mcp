@@ -178,6 +178,9 @@ Run `arbling-telegram-mcp auth` first. The session file must exist before starti
 **Session expired**
 If you see `status: expired` from `refresh_session`, the session was invalidated (you may have logged out on another device, or Telegram revoked it). Run `arbling-telegram-mcp auth` again.
 
+**Logging out / rotating the local session**
+The local session is a SQLite database in WAL mode, so it consists of up to three files: `session.session` plus the `session.session-wal` / `session.session-shm` sidecars. Recent writes — including the auth key — can live in the `-wal` sidecar (especially after a crash), so deleting only `.session` is not enough: **delete all three files** when logging out or rotating credentials, then revoke the session from Telegram's active-sessions screen.
+
 **Group not found / 403 error**
 The group ID in your YAML may be wrong or you may have left the group. Run `arbling-telegram-mcp list-groups` to rediscover and update the YAML.
 

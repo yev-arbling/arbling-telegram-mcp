@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,7 +15,7 @@ from typing import Optional
 from dateutil import parser as dateutil_parser
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
-from telethon.sessions import StringSession
+from telethon.sessions import SQLiteSession, StringSession
 from telethon.tl.types import Channel, Chat, User
 
 from .config import ConfigError, filter_by_category, get_all_curated_ids, load_curated_groups
@@ -22,6 +23,88 @@ from .config import ConfigError, filter_by_category, get_all_curated_ids, load_c
 logger = logging.getLogger(__name__)
 
 DEFAULT_SESSION_PATH = Path.home() / ".arbling-telegram-mcp" / "session"
+
+# How long a connection will wait on a locked session DB before raising
+# "database is locked". Telethon's SQLiteSession opens sqlite3.connect()
+# with no explicit timeout, which defaults to 5s — too short when several
+# arbling-telegram-mcp server processes (e.g. leftover from past Claude
+# Code sessions that weren't cleanly closed) are alive at once and all
+# point at the same local session file.
+_SQLITE_BUSY_TIMEOUT_SECONDS = 30
+
+# Separate, much shorter bound for the courtesy WAL checkpoint on close():
+# if a concurrent writer holds the lock, the checkpoint cannot succeed and
+# waiting the full 30s would only stall shutdown.
+_WAL_CHECKPOINT_CLOSE_TIMEOUT_MS = 1000
+
+
+class _ResilientSQLiteSession(SQLiteSession):
+    """SQLiteSession with a longer busy timeout and WAL journal mode.
+
+    WAL mode lets concurrent readers proceed without blocking on a writer,
+    and the extended busy_timeout makes any remaining write/write
+    contention retry instead of failing immediately with "database is
+    locked". Only one local server is expected to hold this session at a
+    time; this is a safety net for the transient case where more than one
+    briefly overlaps (e.g. during a restart) rather than a substitute for
+    running multiple long-lived servers against the same session file.
+
+    Local SQLite session path only — never used for the hosted-mode
+    TELEGRAM_SESSION_STRING (StringSession) branch, which holds no on-disk
+    file and cannot hit this class of contention.
+
+    Credential hygiene: WAL mode adds `.session-wal` / `.session-shm`
+    sidecar files next to `.session`, and recent writes — including the
+    auth key — live in `-wal` until a checkpoint copies them into the main
+    file. close() below checkpoints+truncates the sidecar best-effort, but
+    after an unclean shutdown it may still hold key material. Any logout /
+    session rotation must therefore delete ALL THREE files (`.session`,
+    `.session-wal`, `.session-shm`), not just `.session`.
+    """
+
+    def _cursor(self):
+        if self._conn is None:
+            self._conn = sqlite3.connect(
+                self.filename,
+                check_same_thread=False,
+                timeout=_SQLITE_BUSY_TIMEOUT_SECONDS,
+            )
+            try:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute(
+                    f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_SECONDS * 1000}"
+                )
+            except sqlite3.Error:
+                # Non-fatal: another connection may prevent the WAL switch
+                # from taking effect immediately. The busy_timeout on this
+                # connection object still applies via the timeout= kwarg.
+                logger.warning(
+                    "Could not set WAL/busy_timeout pragmas on %s", self.filename
+                )
+        return self._conn.cursor()
+
+    def close(self):
+        """Checkpoint + truncate the WAL sidecar before closing.
+
+        SQLite only auto-checkpoints-and-deletes `-wal` when the LAST
+        connection closes. If another process still holds the session file
+        (the exact overlap this class exists for), a plain close() would
+        leave recent writes — auth-key material included — sitting in the
+        `.session-wal` sidecar. Best-effort: never raises, so a checkpoint
+        hiccup (e.g. a concurrent reader mid-transaction) cannot break an
+        otherwise-clean shutdown.
+        """
+        if self._conn is not None:
+            try:
+                self._conn.execute(
+                    f"PRAGMA busy_timeout={_WAL_CHECKPOINT_CLOSE_TIMEOUT_MS}"
+                )
+                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                logger.warning(
+                    "Could not checkpoint WAL sidecar of %s on close", self.filename
+                )
+        super().close()
 
 
 def get_session_path() -> Path:
@@ -217,7 +300,11 @@ class TelegramMCPClient:
                         "'arbling-telegram-mcp auth' to create a session file, or "
                         "set TELEGRAM_SESSION_STRING (hosted mode)."
                     )
-                session = str(session_path)
+                # Local file session only (never the hosted StringSession
+                # path above): use the WAL/busy-timeout-hardened session so
+                # a leftover local process holding the file doesn't surface
+                # as "database is locked".
+                session = _ResilientSQLiteSession(str(session_path))
 
             # Work on a local variable across the awaits; publish to
             # self._client only once fully connected and authorized.
@@ -225,6 +312,20 @@ class TelegramMCPClient:
             await client.connect()
 
             if not await client.is_user_authorized():
+                # connect() succeeded but the session is expired/revoked —
+                # tear the socket down before raising so we never leak a
+                # live, connected-but-unauthorized client that a later call
+                # would otherwise reuse (client.is_connected() would still
+                # be True even though it's unusable). Cleanup is best-effort:
+                # a rare storage/socket error during disconnect must not
+                # mask the informative auth error below.
+                try:
+                    await client.disconnect()
+                except Exception:
+                    logger.warning(
+                        "Failed to disconnect unauthorized client during cleanup",
+                        exc_info=True,
+                    )
                 raise RuntimeError(
                     "Session expired or unauthorized. "
                     "Run 'arbling-telegram-mcp auth' to re-authenticate."
