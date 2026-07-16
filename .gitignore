@@ -54,9 +54,14 @@ dmypy.json
 *.swo
 *~
 
-# Telegram session files — NEVER commit these
+# Telegram session files — NEVER commit these. The -wal/-shm SQLite sidecars
+# can hold auth-key material that hasn't been checkpointed into the main
+# .session file yet (especially after an unclean shutdown), so they are just
+# as much a credential as .session itself.
 *.session
 *.session-journal
+*.session-wal
+*.session-shm
 
 # User's private curated-groups config — stays local, outside the repo
 curated-groups.yaml

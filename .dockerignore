@@ -1,0 +1,56 @@
+# Mirror of .gitignore for the Docker build context. The Dockerfile COPYs an
+# explicit allowlist (requirements-lock.txt, pyproject.toml, README.md, src/),
+# but the ENTIRE context still uploads to the daemon — so credentials and
+# local state must be excluded here, not merely un-COPYed.
+
+# Credentials / local state — must NEVER reach the build context
+*.session
+*.session-journal
+*.session-wal
+*.session-shm
+curated-groups.yaml
+.env
+.env.*
+
+# VCS
+.git/
+.gitignore
+.gitleaks.toml
+.pre-commit-config.yaml
+.github/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python build/test artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Not needed in the image
+tests/
+scripts/
+AGENTS.md
+CONTRIBUTING.md
+Dockerfile
+.dockerignore
+railway.json
+
+# IDEs / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

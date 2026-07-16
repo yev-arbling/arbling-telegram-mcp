@@ -32,6 +32,11 @@ DEFAULT_SESSION_PATH = Path.home() / ".arbling-telegram-mcp" / "session"
 # point at the same local session file.
 _SQLITE_BUSY_TIMEOUT_SECONDS = 30
 
+# Separate, much shorter bound for the courtesy WAL checkpoint on close():
+# if a concurrent writer holds the lock, the checkpoint cannot succeed and
+# waiting the full 30s would only stall shutdown.
+_WAL_CHECKPOINT_CLOSE_TIMEOUT_MS = 1000
+
 
 class _ResilientSQLiteSession(SQLiteSession):
     """SQLiteSession with a longer busy timeout and WAL journal mode.
@@ -47,6 +52,14 @@ class _ResilientSQLiteSession(SQLiteSession):
     Local SQLite session path only — never used for the hosted-mode
     TELEGRAM_SESSION_STRING (StringSession) branch, which holds no on-disk
     file and cannot hit this class of contention.
+
+    Credential hygiene: WAL mode adds `.session-wal` / `.session-shm`
+    sidecar files next to `.session`, and recent writes — including the
+    auth key — live in `-wal` until a checkpoint copies them into the main
+    file. close() below checkpoints+truncates the sidecar best-effort, but
+    after an unclean shutdown it may still hold key material. Any logout /
+    session rotation must therefore delete ALL THREE files (`.session`,
+    `.session-wal`, `.session-shm`), not just `.session`.
     """
 
     def _cursor(self):
@@ -69,6 +82,29 @@ class _ResilientSQLiteSession(SQLiteSession):
                     "Could not set WAL/busy_timeout pragmas on %s", self.filename
                 )
         return self._conn.cursor()
+
+    def close(self):
+        """Checkpoint + truncate the WAL sidecar before closing.
+
+        SQLite only auto-checkpoints-and-deletes `-wal` when the LAST
+        connection closes. If another process still holds the session file
+        (the exact overlap this class exists for), a plain close() would
+        leave recent writes — auth-key material included — sitting in the
+        `.session-wal` sidecar. Best-effort: never raises, so a checkpoint
+        hiccup (e.g. a concurrent reader mid-transaction) cannot break an
+        otherwise-clean shutdown.
+        """
+        if self._conn is not None:
+            try:
+                self._conn.execute(
+                    f"PRAGMA busy_timeout={_WAL_CHECKPOINT_CLOSE_TIMEOUT_MS}"
+                )
+                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                logger.warning(
+                    "Could not checkpoint WAL sidecar of %s on close", self.filename
+                )
+        super().close()
 
 
 def get_session_path() -> Path:
@@ -280,8 +316,16 @@ class TelegramMCPClient:
                 # tear the socket down before raising so we never leak a
                 # live, connected-but-unauthorized client that a later call
                 # would otherwise reuse (client.is_connected() would still
-                # be True even though it's unusable).
-                await client.disconnect()
+                # be True even though it's unusable). Cleanup is best-effort:
+                # a rare storage/socket error during disconnect must not
+                # mask the informative auth error below.
+                try:
+                    await client.disconnect()
+                except Exception:
+                    logger.warning(
+                        "Failed to disconnect unauthorized client during cleanup",
+                        exc_info=True,
+                    )
                 raise RuntimeError(
                     "Session expired or unauthorized. "
                     "Run 'arbling-telegram-mcp auth' to re-authenticate."

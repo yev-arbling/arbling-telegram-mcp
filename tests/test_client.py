@@ -107,6 +107,41 @@ def test_resilient_sqlite_session_enables_wal_and_busy_timeout(tmp_path: Path):
         session.close()
 
 
+def test_resilient_sqlite_session_close_truncates_wal_sidecar(tmp_path: Path):
+    """Graceful close() must checkpoint + truncate the -wal sidecar.
+
+    In WAL mode, recent writes (including auth-key material) live in the
+    `.session-wal` sidecar until a checkpoint copies them into the main
+    `.session` file. SQLite only auto-checkpoints-and-deletes the sidecar
+    when the LAST connection closes — with a second process holding the
+    file (the exact multi-process scenario this class exists for), a plain
+    close() leaves credential bytes sitting in `-wal`. close() must issue a
+    best-effort `PRAGMA wal_checkpoint(TRUNCATE)` first.
+    """
+    from telethon.crypto import AuthKey
+
+    session_path = tmp_path / "wal-close-session"
+    wal_file = Path(str(session_path) + ".session-wal")
+
+    session = _ResilientSQLiteSession(str(session_path))
+    holder = sqlite3.connect(str(session_path) + ".session")
+    try:
+        session.set_dc(2, "149.154.167.40", 443)
+        session.auth_key = AuthKey(data=b"\x01" * 256)
+        session.save()
+        # The holder must actually READ so it becomes a live WAL user —
+        # only then does SQLite skip its automatic last-connection-close
+        # checkpoint+delete, which is the leak scenario under test.
+        holder.execute("SELECT version FROM version").fetchone()
+        assert wal_file.exists() and wal_file.stat().st_size > 0
+
+        session.close()
+
+        assert (not wal_file.exists()) or wal_file.stat().st_size == 0
+    finally:
+        holder.close()
+
+
 def test_resilient_sqlite_session_read_survives_concurrent_writer(tmp_path: Path):
     """A second connection holding an uncommitted write transaction must not
     make a fresh _ResilientSQLiteSession fail with "database is locked" —
@@ -407,6 +442,26 @@ async def test_unauthorized_client_is_disconnected_before_error_propagates(
     import arbling_telegram_mcp.client as client_mod
 
     mock_telethon.is_user_authorized = AsyncMock(return_value=False)
+
+    with pytest.raises(RuntimeError, match="Session expired or unauthorized"):
+        await client_mod._telegram_client._get_client()
+
+    mock_telethon.disconnect.assert_awaited_once()
+    assert client_mod._telegram_client._client is None
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_disconnect_failure_does_not_mask_auth_error(
+    mock_telethon,
+):
+    """If the cleanup disconnect() itself raises (rare storage/socket error),
+    the caller must still see the informative "Session expired or
+    unauthorized" RuntimeError — not the disconnect failure.
+    """
+    import arbling_telegram_mcp.client as client_mod
+
+    mock_telethon.is_user_authorized = AsyncMock(return_value=False)
+    mock_telethon.disconnect = AsyncMock(side_effect=OSError("socket already dead"))
 
     with pytest.raises(RuntimeError, match="Session expired or unauthorized"):
         await client_mod._telegram_client._get_client()
