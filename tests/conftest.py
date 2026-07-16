@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,9 +28,19 @@ tech_mentors:
 
 @pytest.fixture()
 def fake_session(tmp_path: Path) -> Path:
-    """Create a fake .session file; return path without the .session extension."""
+    """Create a fake but *valid* .session sqlite file; return path without
+    the .session extension.
+
+    Must be a real, openable SQLite database: _get_client() now opens it
+    for real via _ResilientSQLiteSession before TelegramClient (which tests
+    mock out) is ever constructed. Telethon's SQLiteSession auto-creates its
+    schema on first open, so an empty valid db is all this needs to be.
+    """
     session_file = tmp_path / "session.session"
-    session_file.write_bytes(b"fake telethon session data")
+    conn = sqlite3.connect(str(session_file))
+    conn.execute("CREATE TABLE _fake_marker (id INTEGER)")
+    conn.commit()
+    conn.close()
     return tmp_path / "session"
 
 

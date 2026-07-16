@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,7 +15,7 @@ from typing import Optional
 from dateutil import parser as dateutil_parser
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
-from telethon.sessions import StringSession
+from telethon.sessions import SQLiteSession, StringSession
 from telethon.tl.types import Channel, Chat, User
 
 from .config import ConfigError, filter_by_category, get_all_curated_ids, load_curated_groups
@@ -22,6 +23,52 @@ from .config import ConfigError, filter_by_category, get_all_curated_ids, load_c
 logger = logging.getLogger(__name__)
 
 DEFAULT_SESSION_PATH = Path.home() / ".arbling-telegram-mcp" / "session"
+
+# How long a connection will wait on a locked session DB before raising
+# "database is locked". Telethon's SQLiteSession opens sqlite3.connect()
+# with no explicit timeout, which defaults to 5s — too short when several
+# arbling-telegram-mcp server processes (e.g. leftover from past Claude
+# Code sessions that weren't cleanly closed) are alive at once and all
+# point at the same local session file.
+_SQLITE_BUSY_TIMEOUT_SECONDS = 30
+
+
+class _ResilientSQLiteSession(SQLiteSession):
+    """SQLiteSession with a longer busy timeout and WAL journal mode.
+
+    WAL mode lets concurrent readers proceed without blocking on a writer,
+    and the extended busy_timeout makes any remaining write/write
+    contention retry instead of failing immediately with "database is
+    locked". Only one local server is expected to hold this session at a
+    time; this is a safety net for the transient case where more than one
+    briefly overlaps (e.g. during a restart) rather than a substitute for
+    running multiple long-lived servers against the same session file.
+
+    Local SQLite session path only — never used for the hosted-mode
+    TELEGRAM_SESSION_STRING (StringSession) branch, which holds no on-disk
+    file and cannot hit this class of contention.
+    """
+
+    def _cursor(self):
+        if self._conn is None:
+            self._conn = sqlite3.connect(
+                self.filename,
+                check_same_thread=False,
+                timeout=_SQLITE_BUSY_TIMEOUT_SECONDS,
+            )
+            try:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute(
+                    f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_SECONDS * 1000}"
+                )
+            except sqlite3.Error:
+                # Non-fatal: another connection may prevent the WAL switch
+                # from taking effect immediately. The busy_timeout on this
+                # connection object still applies via the timeout= kwarg.
+                logger.warning(
+                    "Could not set WAL/busy_timeout pragmas on %s", self.filename
+                )
+        return self._conn.cursor()
 
 
 def get_session_path() -> Path:
@@ -217,7 +264,11 @@ class TelegramMCPClient:
                         "'arbling-telegram-mcp auth' to create a session file, or "
                         "set TELEGRAM_SESSION_STRING (hosted mode)."
                     )
-                session = str(session_path)
+                # Local file session only (never the hosted StringSession
+                # path above): use the WAL/busy-timeout-hardened session so
+                # a leftover local process holding the file doesn't surface
+                # as "database is locked".
+                session = _ResilientSQLiteSession(str(session_path))
 
             # Work on a local variable across the awaits; publish to
             # self._client only once fully connected and authorized.
