@@ -11,11 +11,11 @@ WORKDIR /app
 
 # Install the exact pinned dependency closure first, in its own layer, so
 # dependency resolution is cached across rebuilds that only touch source
-# files. requirements.lock pins every transitive version (see that file's
+# files. requirements-lock.txt pins every transitive version (see that file's
 # header for regeneration instructions); pyproject.toml stays the source of
 # truth for version ranges.
-COPY requirements.lock ./
-RUN pip install --no-cache-dir -r requirements.lock
+COPY requirements-lock.txt ./
+RUN pip install --no-cache-dir -r requirements-lock.txt
 
 COPY pyproject.toml README.md ./
 COPY src ./src
@@ -28,8 +28,10 @@ RUN pip install --no-cache-dir --no-deps .
 
 # Run as a non-root, unprivileged system account. Defense in depth: even
 # though Railway's runtime is itself sandboxed, the process should never
-# hold root inside its own container.
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin app \
+# hold root inside its own container. UID pinned explicitly (999) so it is
+# stable across base-image changes, not incidental to Debian's
+# first-free-SYS_UID allocation.
+RUN useradd --system --uid 999 --no-create-home --shell /usr/sbin/nologin app \
     && chown -R app:app /app
 USER app
 

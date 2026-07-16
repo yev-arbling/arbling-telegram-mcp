@@ -1,11 +1,22 @@
 version: 2
 updates:
+  # Covers pyproject.toml AND requirements-lock.txt (the pip ecosystem only
+  # discovers requirements files whose name contains "requirements" and ends
+  # in .txt/.in — which is why the lock is named requirements-lock.txt).
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
   - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  # The Dockerfile base image is pinned by digest, so it can never drift on
+  # its own — this is what proposes digest-bump PRs when upstream publishes
+  # a new python:3.12-slim.
+  - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
