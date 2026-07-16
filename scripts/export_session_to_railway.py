@@ -3,11 +3,12 @@
 
 Runs entirely on the founder's laptop and entirely offline — the SQLite
 session file is converted to a Telethon StringSession without any network
-call, then handed to the Railway CLI as an environment variable.
+call, then piped to the Railway CLI over stdin (`railway variable set
+<KEY> --stdin`) so the credential is never a process argument.
 
 The session string is a credential equivalent to a full Telegram login:
-it is never printed, logged, or passed through a shell. Only its length
-is reported.
+it is never printed, logged, passed through a shell, or placed on the
+command line. Only its length is reported.
 
 Usage:
     py -3.12 scripts/export_session_to_railway.py [--service NAME] [--environment NAME]
@@ -75,9 +76,13 @@ def set_railway_variable(
 ) -> None:
     """Set TELEGRAM_SESSION_STRING on Railway via the CLI.
 
-    Always an argument list (never shell=True) so the value is not exposed
-    to shell parsing/history. CLI output is captured and discarded because
-    the Railway CLI may echo variable values back.
+    Sent over the child process's stdin pipe via `railway variable set
+    <KEY> --stdin` (Railway CLI >= v4.56.0, released 2026-05-08) rather than
+    `--set KEY=value`, so the credential never appears as a process argument
+    at all — no window during which `ps`/Task Manager on this laptop (or any
+    other local user) could read it out of the argv of a running process.
+    Always an argument list (never shell=True). CLI output is captured and
+    discarded because the Railway CLI may echo variable values back.
     """
     railway = shutil.which("railway")
     if railway is None:
@@ -85,13 +90,13 @@ def set_railway_variable(
             "Railway CLI not found on PATH. Install it first: npm i -g @railway/cli"
         )
 
-    cmd = [railway, "variables", "--set", f"{SESSION_STRING_VAR}={session_string}"]
+    cmd = [railway, "variable", "set", SESSION_STRING_VAR, "--stdin"]
     if service:
         cmd.extend(["--service", service])
     if environment:
         cmd.extend(["--environment", environment])
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, input=session_string, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"railway CLI exited with code {result.returncode}. Its output is "

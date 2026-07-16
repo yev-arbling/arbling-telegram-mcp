@@ -87,7 +87,7 @@ def test_conversion_unauthenticated_session_raises(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Railway CLI invocation — arg list, no shell, value never echoed
+# Railway CLI invocation — arg list, stdin value, no shell, never echoed
 # ---------------------------------------------------------------------------
 
 
@@ -111,8 +111,14 @@ def test_main_calls_railway_with_arg_list_and_never_prints_value(
 
     argv = run_mock.call_args[0][0]
     assert isinstance(argv, list)
-    assert argv[:3] == ["railway", "variables", "--set"]
-    assert argv[3] == f"TELEGRAM_SESSION_STRING={expected_string}"
+    # KEY only on the command line — the value goes over stdin, never argv,
+    # so it never appears in `ps`/Task Manager for the life of the process.
+    assert argv[:4] == ["railway", "variable", "set", "TELEGRAM_SESSION_STRING"]
+    assert "--stdin" in argv
+    assert not any(expected_string in part for part in argv)
+
+    # Value passed via the input= kwarg (piped to the child's stdin), not argv.
+    assert run_mock.call_args.kwargs.get("input") == expected_string
     # Never through a shell.
     assert run_mock.call_args.kwargs.get("shell", False) is False
 
