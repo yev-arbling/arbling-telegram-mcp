@@ -225,6 +225,12 @@ class TelegramMCPClient:
             await client.connect()
 
             if not await client.is_user_authorized():
+                # connect() succeeded but the session is expired/revoked —
+                # tear the socket down before raising so we never leak a
+                # live, connected-but-unauthorized client that a later call
+                # would otherwise reuse (client.is_connected() would still
+                # be True even though it's unusable).
+                await client.disconnect()
                 raise RuntimeError(
                     "Session expired or unauthorized. "
                     "Run 'arbling-telegram-mcp auth' to re-authenticate."

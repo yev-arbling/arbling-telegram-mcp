@@ -337,6 +337,27 @@ async def test_missing_file_and_missing_string_gives_distinguishing_error(
 
 
 @pytest.mark.asyncio
+async def test_unauthorized_client_is_disconnected_before_error_propagates(
+    mock_telethon,
+):
+    """Regression: connect() can succeed while is_user_authorized() is False
+    (expired/revoked session). The connected client must be torn down before
+    the RuntimeError propagates — otherwise it leaks a live MTProto socket
+    that nothing ever closes, and the next call reuses a client stuck
+    forever in "connected but unauthorized" state.
+    """
+    import arbling_telegram_mcp.client as client_mod
+
+    mock_telethon.is_user_authorized = AsyncMock(return_value=False)
+
+    with pytest.raises(RuntimeError, match="Session expired or unauthorized"):
+        await client_mod._telegram_client._get_client()
+
+    mock_telethon.disconnect.assert_awaited_once()
+    assert client_mod._telegram_client._client is None
+
+
+@pytest.mark.asyncio
 async def test_concurrent_get_client_constructs_exactly_one_client(mock_telethon):
     import asyncio
 
