@@ -8,7 +8,7 @@ tmp_path = WindowsPath('C:/Users/yevma/AppData/Local/Temp/pytest-of-yevma/pytest
     def test_fresh_login_never_reads_local_session_file(tmp_path: Path):
         """--fresh-login must never construct SQLiteSession or touch the local file.
     
-        A real, convertible local session exists on disk � if the code path read
+        A real, convertible local session exists on disk ï¿½ if the code path read
         it, conversion would succeed silently. The SQLiteSession constructor is
         replaced with a tripwire so any touch fails loudly.
         """
@@ -152,4 +152,75 @@ FAILED tests/test_export_script.py::test_default_path_unchanged_and_warns_about_
 === GREEN: same tests after implementation (same command) ===
 ...                                                                      [100%]
 3 passed, 8 deselected in 0.58s
+
+
+=== RED: review follow-up test before fix (py -3.12 -m pytest tests/test_export_script.py -q -k "telethon_error_uses_controlled_error_path") ===
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________ test_fresh_login_telethon_error_uses_controlled_error_path __________
+
+capsys = <_pytest.capture.CaptureFixture object at 0x00000256794F0D10>
+
+    def test_fresh_login_telethon_error_uses_controlled_error_path(capsys):
+        """A Telethon-style exception from start() (PhoneCodeInvalidError,
+        FloodWaitError, ...) is not a RuntimeError: it must exit 1 via the
+        controlled stderr path ï¿½ message text only, no traceback, no credential ï¿½
+        and the client must always be disconnected."""
+        script = _load_script()
+    
+        class FakeRPCError(Exception):
+            pass
+    
+        sentinel = "PHONE-CODE-INVALID-SENTINEL"
+        fresh_string = "1NeverPushedString" + "z" * 40
+        client_mock = _make_mock_fresh_client(fresh_string)
+        client_mock.start.side_effect = FakeRPCError(sentinel)
+    
+        run_mock = MagicMock(return_value=MagicMock(returncode=0))
+        with (
+            patch.dict(os.environ, FRESH_ENV),
+            patch("telethon.TelegramClient", MagicMock(return_value=client_mock)),
+            patch.object(script.shutil, "which", return_value="railway"),
+            patch.object(script.subprocess, "run", run_mock),
+        ):
+>           exit_code = script.main(["--fresh-login"])
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_export_script.py:300: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+scripts\export_session_to_railway.py:229: in main
+    session_string = fresh_login_session_string()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts\export_session_to_railway.py:150: in fresh_login_session_string
+    client.start()  # Telethon's own interactive prompts (phone / code / 2FA)
+    ^^^^^^^^^^^^^^
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\unittest\mock.py:1139: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\unittest\mock.py:1143: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='mock.start' id='2570513880448'>, args = (), kwargs = {}
+
+    def _execute_mock_call(self, /, *args, **kwargs):
+        # separate from _increment_mock_call so that awaited functions are
+        # executed separately from their call, also AsyncMock overrides this method
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               test_export_script.test_fresh_login_telethon_error_uses_controlled_error_path.<locals>.FakeRPCError: PHONE-CODE-INVALID-SENTINEL
+
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\unittest\mock.py:1198: FakeRPCError
+=========================== short test summary info ===========================
+FAILED tests/test_export_script.py::test_fresh_login_telethon_error_uses_controlled_error_path
+1 failed, 11 deselected in 0.75s
+
+
+=== GREEN: review follow-up test after fix (same command) ===
+.                                                                        [100%]
+1 passed, 11 deselected in 0.48s
 

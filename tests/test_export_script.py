@@ -275,6 +275,42 @@ def test_fresh_login_pushes_exact_saved_string_via_stdin(capsys):
     assert str(len(fresh_string)) in captured.out  # only the length is reported
 
 
+def test_fresh_login_telethon_error_uses_controlled_error_path(capsys):
+    """A Telethon-style exception from start() (PhoneCodeInvalidError,
+    FloodWaitError, ...) is not a RuntimeError: it must exit 1 via the
+    controlled stderr path — message text only, no traceback, no credential —
+    and the client must always be disconnected."""
+    script = _load_script()
+
+    class FakeRPCError(Exception):
+        pass
+
+    sentinel = "PHONE-CODE-INVALID-SENTINEL"
+    fresh_string = "1NeverPushedString" + "z" * 40
+    client_mock = _make_mock_fresh_client(fresh_string)
+    client_mock.start.side_effect = FakeRPCError(sentinel)
+
+    run_mock = MagicMock(return_value=MagicMock(returncode=0))
+    with (
+        patch.dict(os.environ, FRESH_ENV),
+        patch("telethon.TelegramClient", MagicMock(return_value=client_mock)),
+        patch.object(script.shutil, "which", return_value="railway"),
+        patch.object(script.subprocess, "run", run_mock),
+    ):
+        exit_code = script.main(["--fresh-login"])
+
+    assert exit_code == 1
+    run_mock.assert_not_called()  # nothing is pushed on a failed login
+    client_mock.disconnect.assert_called_once()  # connection always released
+
+    captured = capsys.readouterr()
+    assert "ERROR (FakeRPCError)" in captured.err
+    assert sentinel in captured.err
+    assert "Traceback" not in captured.err
+    assert fresh_string not in captured.out
+    assert fresh_string not in captured.err
+
+
 def test_default_path_unchanged_and_warns_about_shared_auth_key(
     tmp_path: Path, capsys
 ):

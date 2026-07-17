@@ -147,8 +147,11 @@ def fresh_login_session_string() -> str:
     api_id, api_hash = get_api_credentials()
 
     client = TelegramClient(StringSession(), api_id, api_hash)
-    client.start()  # Telethon's own interactive prompts (phone / code / 2FA)
+    # start() is inside the try so a failed interactive login (EOF on
+    # non-interactive stdin, FloodWaitError, max code attempts, ...) still
+    # releases the connection — same pattern as _cmd_auth in cli.py.
     try:
+        client.start()  # Telethon's own interactive prompts (phone / code / 2FA)
         session_string = client.session.save()
     finally:
         client.disconnect()
@@ -233,6 +236,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         set_railway_variable(session_string, args.service, args.environment)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        # Telethon RPC errors from the interactive login (PhoneCodeInvalidError,
+        # FloodWaitError, ApiIdInvalidError, ...) are not RuntimeError. Route
+        # them through the same controlled path — message text only, never a
+        # traceback that could carry credential material.
+        print(f"ERROR ({type(exc).__name__}): {exc}", file=sys.stderr)
         return 1
 
     print(f"{SESSION_STRING_VAR} set on Railway.")
