@@ -1,0 +1,155 @@
+=== RED: new tests before implementation (py -3.12 -m pytest tests/test_export_script.py -q -k "fresh_login or warns_about_shared_auth_key") ===
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+_______________ test_fresh_login_never_reads_local_session_file _______________
+
+tmp_path = WindowsPath('C:/Users/yevma/AppData/Local/Temp/pytest-of-yevma/pytest-2035/test_fresh_login_never_reads_l0')
+
+    def test_fresh_login_never_reads_local_session_file(tmp_path: Path):
+        """--fresh-login must never construct SQLiteSession or touch the local file.
+    
+        A real, convertible local session exists on disk � if the code path read
+        it, conversion would succeed silently. The SQLiteSession constructor is
+        replaced with a tripwire so any touch fails loudly.
+        """
+        script = _load_script()
+        session_path = _make_synthetic_sqlite_session(tmp_path)
+    
+        fresh_string = "FRESH-" + "x" * 32
+        client_mock = _make_mock_fresh_client(fresh_string)
+        telegram_client_cls = MagicMock(return_value=client_mock)
+        sqlite_session_cls = MagicMock(
+            side_effect=AssertionError("SQLiteSession must never be constructed")
+        )
+    
+        run_mock = MagicMock(return_value=MagicMock(returncode=0))
+        with (
+            patch.dict(
+                os.environ, {**FRESH_ENV, "TELEGRAM_SESSION_PATH": str(session_path)}
+            ),
+            patch("telethon.TelegramClient", telegram_client_cls),
+            patch("telethon.sessions.SQLiteSession", sqlite_session_cls),
+            patch.object(script.shutil, "which", return_value="railway"),
+            patch.object(script.subprocess, "run", run_mock),
+        ):
+>           exit_code = script.main(["--fresh-login"])
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_export_script.py:227: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+scripts\export_session_to_railway.py:120: in main
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\argparse.py:1908: in parse_args
+    self.error(msg)
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\argparse.py:2650: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = ArgumentParser(prog='__main__.py', usage=None, description='Convert the local Telethon session to a StringSession (off...he value is never printed.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = '__main__.py: error: unrecognized arguments: --fresh-login\n'
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\argparse.py:2637: SystemExit
+---------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] [--service SERVICE] [--environment ENVIRONMENT]
+__main__.py: error: unrecognized arguments: --fresh-login
+____________ test_fresh_login_pushes_exact_saved_string_via_stdin _____________
+
+capsys = <_pytest.capture.CaptureFixture object at 0x000001C8BA3BFC20>
+
+    def test_fresh_login_pushes_exact_saved_string_via_stdin(capsys):
+        """The string pushed to Railway is exactly session.save()'s return value,
+        via the same `railway variable set <KEY> --stdin` mechanics, never argv,
+        never echoed."""
+        script = _load_script()
+        fresh_string = "1FreshStringSessionValue" + "y" * 40
+    
+        client_mock = _make_mock_fresh_client(fresh_string)
+        run_mock = MagicMock(return_value=MagicMock(returncode=0))
+        with (
+            patch.dict(os.environ, FRESH_ENV),
+            patch("telethon.TelegramClient", MagicMock(return_value=client_mock)),
+            patch.object(script.shutil, "which", return_value="railway"),
+            patch.object(script.subprocess, "run", run_mock),
+        ):
+>           exit_code = script.main(["--fresh-login"])
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_export_script.py:259: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+scripts\export_session_to_railway.py:120: in main
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\argparse.py:1908: in parse_args
+    self.error(msg)
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\argparse.py:2650: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = ArgumentParser(prog='__main__.py', usage=None, description='Convert the local Telethon session to a StringSession (off...he value is never printed.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = '__main__.py: error: unrecognized arguments: --fresh-login\n'
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+..\..\AppData\Local\Programs\Python\Python312-arm64\Lib\argparse.py:2637: SystemExit
+---------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] [--service SERVICE] [--environment ENVIRONMENT]
+__main__.py: error: unrecognized arguments: --fresh-login
+_________ test_default_path_unchanged_and_warns_about_shared_auth_key _________
+
+tmp_path = WindowsPath('C:/Users/yevma/AppData/Local/Temp/pytest-of-yevma/pytest-2035/test_default_path_unchanged_an0')
+capsys = <_pytest.capture.CaptureFixture object at 0x000001C8BA816300>
+
+    def test_default_path_unchanged_and_warns_about_shared_auth_key(
+        tmp_path: Path, capsys
+    ):
+        """No flag: conversion + push behave exactly as before, plus a loud
+        shared-auth-key warning recommending --fresh-login."""
+        script = _load_script()
+        session_path = _make_synthetic_sqlite_session(tmp_path)
+        expected_string = script.convert_session_to_string(session_path)
+    
+        run_mock = MagicMock(return_value=MagicMock(returncode=0))
+        with (
+            patch.dict(os.environ, {"TELEGRAM_SESSION_PATH": str(session_path)}),
+            patch.object(script.shutil, "which", return_value="railway"),
+            patch.object(script.subprocess, "run", run_mock),
+        ):
+            exit_code = script.main([])
+    
+        assert exit_code == 0
+        # Behavior unchanged: same converted string, same push mechanics.
+        argv = run_mock.call_args[0][0]
+        assert argv[:4] == ["railway", "variable", "set", "TELEGRAM_SESSION_STRING"]
+        assert "--stdin" in argv
+        assert run_mock.call_args.kwargs.get("input") == expected_string
+    
+        captured = capsys.readouterr()
+>       assert "WARNING" in captured.err
+E       AssertionError: assert 'WARNING' in ''
+E        +  where '' = CaptureResult(out='TELEGRAM_SESSION_STRING set on Railway.\nSession string length: 353 characters (value not shown).\n', err='').err
+
+tests\test_export_script.py:303: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_export_script.py::test_fresh_login_never_reads_local_session_file
+FAILED tests/test_export_script.py::test_fresh_login_pushes_exact_saved_string_via_stdin
+FAILED tests/test_export_script.py::test_default_path_unchanged_and_warns_about_shared_auth_key
+3 failed, 8 deselected in 0.87s
+
+
+=== GREEN: same tests after implementation (same command) ===
+...                                                                      [100%]
+3 passed, 8 deselected in 0.58s
+
