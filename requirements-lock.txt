@@ -40,7 +40,7 @@ httpx-sse==0.4.3
 idna==3.18
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
-mcp==1.28.1
+mcp==2.0.0
 pyaes==1.6.1
 pyasn1==0.6.4
 pycparser==3.0
