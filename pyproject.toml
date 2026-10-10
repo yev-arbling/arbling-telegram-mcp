@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     # >=1.8 for streamable HTTP (stateless_http/json_response/streamable_http_app)
-    "mcp>=1.8.0,<2",
+    "mcp>=1.8.0,<3",
     # telethon repo archived 2026-02-21 (read-only); floor pinned to the latest
     # 1.x release, capped <2 since no maintainer will cut a compatible major
     # bump. Revisit/migrate (e.g. Pyrogram) if Telegram breaks 1.x.
