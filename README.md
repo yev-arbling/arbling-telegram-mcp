@@ -120,7 +120,7 @@ To get the numeric IDs: run `arbling-telegram-mcp list-groups` — it outputs a 
 
 ## Hosted deployment (Railway)
 
-The server can also run over HTTP for cloud callers (e.g. a daily-brief runner) via the `serve-http` subcommand — a stateless streamable-HTTP MCP endpoint at **`POST /mcp`**, protected by a mandatory bearer token. The repo ships a `Dockerfile` and `railway.json` (healthcheck on `/health`, restart `ON_FAILURE`), so deploying is: create a Railway service from this repo, set the variables below, done.
+The server can also run over HTTP for cloud callers (e.g. a daily-brief runner) via the `serve-http` subcommand — a stateless streamable-HTTP MCP endpoint at **`POST /mcp`**, protected by a mandatory bearer token. The repo ships a `Dockerfile`. Railway reads no `railway.json` after 2026-12-01, so the service's own settings carry the healthcheck (`/health`, 30 s) and the restart policy (`ON_FAILURE`, 5 retries); deploying is: create a Railway service from this repo, set its healthcheck path `/health`, set the variables below, done.
 
 The read-only tool surface is identical to stdio mode — same 7 tools, no DMs, curated groups only.
 
