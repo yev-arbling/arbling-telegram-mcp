@@ -20,9 +20,10 @@ classifiers = [
 dependencies = [
     # >=1.8 for streamable HTTP (stateless_http/json_response/streamable_http_app)
     "mcp>=1.8.0,<2",
-    # telethon repo archived 2026-02-21 (read-only); floor pinned to the latest
-    # 1.x release, capped <2 since no maintainer will cut a compatible major
-    # bump. Revisit/migrate (e.g. Pyrogram) if Telegram breaks 1.x.
+    # Telethon development moved from GitHub (archived 2026-02-21) to Codeberg
+    # (codeberg.org/Lonami/Telethon) and is maintained there: 1.45.0 shipped
+    # 2026-09-10. Capped <2 so a future major cannot slip in unreviewed; raising
+    # the floor is left to the weekly stack routine. No migration planned.
     "telethon>=1.44.0,<2",
     "pyyaml>=6.0",
     "python-dateutil>=2.8",
