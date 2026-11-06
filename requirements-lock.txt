@@ -23,10 +23,10 @@
 # pins the exact resolved closure so `docker build` installs byte-identical
 # dependency versions every time instead of re-resolving against whatever is
 # newest on PyPI at build time.
-annotated-types==0.7.0
+annotated-types==0.8.0
 anyio==4.14.2
 attrs==26.1.0
-certifi==2026.6.17
+certifi==2026.10.18
 cffi==2.1.0
 click==8.4.2
 # Windows-only transitive dep of click; absent from the Linux freeze. Pinned
@@ -40,9 +40,9 @@ httpx-sse==0.4.3
 idna==3.18
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
-mcp==1.28.1
+mcp==1.30.0
 pyaes==1.6.1
-pyasn1==0.6.4
+pyasn1==0.6.5
 pycparser==3.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
@@ -60,7 +60,7 @@ referencing==0.37.0
 rpds-py==2026.6.3
 rsa==4.9.1
 six==1.17.0
-sse-starlette==3.4.5
+sse-starlette==3.4.6
 starlette==1.3.1
 Telethon==1.44.0
 typing-inspection==0.4.2
