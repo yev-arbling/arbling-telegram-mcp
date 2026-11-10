@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     # >=1.8 for streamable HTTP (stateless_http/json_response/streamable_http_app)
-    "mcp>=1.8.0,<2",
+    "mcp>=1.8.0,<3",
     # Telethon development moved from GitHub (archived 2026-02-21) to Codeberg
     # (codeberg.org/Lonami/Telethon) and is maintained there: 1.45.0 shipped
     # 2026-09-10. Capped <2 so a future major cannot slip in unreviewed; raising
