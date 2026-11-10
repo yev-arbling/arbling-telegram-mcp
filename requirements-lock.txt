@@ -28,7 +28,7 @@ anyio==4.14.2
 attrs==26.1.0
 certifi==2026.10.18
 cffi==2.1.0
-click==8.4.2
+click==8.5.1
 # Windows-only transitive dep of click; absent from the Linux freeze. Pinned
 # conditionally so Windows dev installs from this lock stay reproducible too.
 colorama==0.4.6; sys_platform == "win32"
