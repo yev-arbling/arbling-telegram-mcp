@@ -15,7 +15,7 @@ WORKDIR /app
 # header for regeneration instructions); pyproject.toml stays the source of
 # truth for version ranges.
 COPY requirements-lock.txt ./
-RUN pip install --no-cache-dir -r requirements-lock.txt
+RUN pip install --no-cache-dir --only-binary=pydantic-core -r requirements-lock.txt
 
 COPY pyproject.toml README.md ./
 COPY src ./src
