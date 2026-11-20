@@ -164,7 +164,7 @@ def build_http_app():
 
     from mcp.server.transport_security import TransportSecuritySettings
 
-    from .server import create_mcp
+    from .server import create_mcp, streamable_http_app
 
     # DNS-rebinding protection (Host-header allowlist) is designed for
     # unauthenticated localhost servers. Hosted mode runs behind a public
@@ -173,13 +173,14 @@ def build_http_app():
     transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=False
     )
-    mcp = create_mcp(
-        stateless_http=True,
-        json_response=True,
-        transport_security=transport_security,
-    )
+    http_settings = {
+        "stateless_http": True,
+        "json_response": True,
+        "transport_security": transport_security,
+    }
+    mcp = create_mcp(**http_settings)
     mcp.custom_route(HEALTH_PATH, methods=["GET"])(health)
-    app = mcp.streamable_http_app()
+    app = streamable_http_app(mcp, **http_settings)
     return BearerAuthMiddleware(app, token)
 
 

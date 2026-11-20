@@ -18,8 +18,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    # >=1.8 for streamable HTTP (stateless_http/json_response/streamable_http_app)
-    "mcp>=1.8.0,<2",
+    # 1.x and 2.x both work (server.py picks MCPServer or FastMCP). 1.30.0 and 2.2.0 are the first
+    # releases fixed for CVE-2026-116684/-116685/-116686 (pip-audit), so 2.0 and 2.1 are excluded.
+    "mcp>=1.30.0,!=2.0.*,!=2.1.*,<3",
     # Telethon development moved from GitHub (archived 2026-02-21) to Codeberg
     # (codeberg.org/Lonami/Telethon) and is maintained there: 1.45.0 shipped
     # 2026-09-10. Capped <2 so a future major cannot slip in unreviewed; raising

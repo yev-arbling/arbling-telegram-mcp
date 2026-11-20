@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+try:  # mcp >= 2.0 renamed FastMCP to MCPServer (mcp.server.mcpserver); same tool/route API
+    from mcp.server.mcpserver import MCPServer as FastMCP
+
+    MCP2 = True
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP
+
+    MCP2 = False
+
+# In mcp 2.x these streamable-HTTP settings are arguments of streamable_http_app(), not of the server.
+HTTP_SETTINGS = ("stateless_http", "json_response", "transport_security")
 
 from .client import (
     get_telegram_status,
@@ -186,13 +196,25 @@ def create_mcp(**settings) -> FastMCP:
 
     Extra keyword arguments are forwarded to FastMCP settings (e.g.
     stateless_http=True, json_response=True for the hosted HTTP transport).
+    On mcp 2.x the streamable-HTTP settings are not server settings, so they
+    are left out here and passed to `streamable_http_app` instead.
     A fresh instance per call matters for HTTP mode: a FastMCP session
     manager can only be started once.
     """
+    if MCP2:
+        settings = {k: v for k, v in settings.items() if k not in HTTP_SETTINGS}
     server = FastMCP("arbling-telegram-mcp", **settings)
     for tool_fn in ALL_TOOLS:
         server.tool()(tool_fn)
     return server
+
+
+def streamable_http_app(server: FastMCP, **settings):
+    """The streamable-HTTP ASGI app, with the HTTP settings where this mcp version takes them:
+    on 2.x as arguments here, on 1.x already given to `create_mcp`."""
+    if MCP2:
+        return server.streamable_http_app(**{k: v for k, v in settings.items() if k in HTTP_SETTINGS})
+    return server.streamable_http_app()
 
 
 # Module-level instance used by the default stdio transport (`arbling-telegram-mcp`).
