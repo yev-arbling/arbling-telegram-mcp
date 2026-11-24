@@ -24,7 +24,7 @@
 # dependency versions every time instead of re-resolving against whatever is
 # newest on PyPI at build time.
 annotated-types==0.8.0
-anyio==4.14.2
+anyio==4.16.0
 attrs==26.1.0
 certifi==2026.10.18
 cffi==2.1.1
