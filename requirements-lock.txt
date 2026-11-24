@@ -53,7 +53,7 @@ pydantic-settings==2.14.2
 pydantic_core==2.50.5
 PyJWT==2.15.0
 python-dateutil==2.9.0.post0
-python-dotenv==1.2.2
+python-dotenv==1.2.4
 python-multipart==0.0.32
 # Windows-only (no Linux distribution exists); pulled in transitively by mcp
 # only when sys_platform == "win32" — kept pinned + conditional so it never
