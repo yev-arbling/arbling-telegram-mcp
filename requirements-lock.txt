@@ -59,7 +59,7 @@ python-multipart==0.0.32
 # only when sys_platform == "win32" — kept pinned + conditional so it never
 # gets installed on the linux/amd64 Docker image.
 pywin32==312; sys_platform == "win32"
-PyYAML==6.0.3
+PyYAML==6.0.4
 referencing==0.37.0
 rpds-py==2026.6.3
 rsa==4.9.1
